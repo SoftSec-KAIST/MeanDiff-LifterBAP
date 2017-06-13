@@ -1,4 +1,4 @@
-FROM lifter_base
+FROM docker_base
 MAINTAINER Soomin Kim <soomink@kaist.ac.kr>
 
 RUN apt install binutils-multiarch -y
