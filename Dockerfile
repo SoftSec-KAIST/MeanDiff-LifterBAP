@@ -1,4 +1,4 @@
-FROM docker_base
+FROM build_base
 MAINTAINER Soomin Kim <soomink@kaist.ac.kr>
 
 RUN apt install binutils-multiarch -y
