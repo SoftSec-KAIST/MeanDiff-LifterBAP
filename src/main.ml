@@ -326,11 +326,13 @@ let rec json_stmt (num, idx, res) stmt =
 (* abstract syntax tree *)
 
 let json_ast len bil =
+  let start_stmt = wrap "Stmt" "Start"
+      [json_int addr ; json_size 32 ; (json_endian Dba.BigEndian)] in
   (* TODO: pass arch and match instead of argv.(1) *)
   let imm = if Sys.argv.(1) = "x86"
-            then wrap "Imm" "Integer" [json_int (0x8048000 + len) ; json_int 32]
-            else wrap "Imm" "Integer" [json_int (0x401000 + len) ; json_int 64] in
-  let num = wrap "Expr" "Num" [imm] in
+            then [json_int (0x8048000 + len) ; json_int 32]
+            else [json_int (0x401000 + len) ; json_int 64] in
+  let num = wrap "Expr" "Num" imm in
 
   (* translate *)
   let _, _, stmts_rev = List.fold_left ~f:json_stmt ~init:(num, 0, []) bil in
