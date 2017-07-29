@@ -435,8 +435,9 @@ let addr = Addr.of_string
 let input = read_input Sys.argv.(2)
 let mem = create_memory arch input addr
 let backend = "llvm"
+
 let _ =
-  Plugins.load ();
+  ignore (Plugins.load ());
   Dis.with_disasm ~backend (Arch.to_string arch) ~f:(fun dis ->
     let bytes = Dis.run dis mem ~return:ident ~init:0
         ~stop_on:[`Valid] ~invalid:(bad_insn addr)
