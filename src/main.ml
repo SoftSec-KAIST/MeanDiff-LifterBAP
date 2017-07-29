@@ -230,7 +230,7 @@ let rec json_expr expr =
   | Bil.Let (v, e1, e2) -> raise Unexpected_Expr
 
   | Bil.Unknown (_, _) ->
-      wrap_expr "NotExpr" []
+      wrap_expr "Undefined" []
 
   | Bil.Ite (e1, e2, e3) ->
       wrap_expr "Ite" [json_expr e1 ; json_expr e2 ; json_expr e3]
