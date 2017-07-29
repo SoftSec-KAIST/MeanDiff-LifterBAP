@@ -56,11 +56,17 @@ let bil_of_insn lift mem insn =
 
 
 (* My Section *)
+
 let rec lookup_env v env =
   match env with
   | [] -> None
   | (w, e) :: env_ ->
       if v = w then Some e else lookup_env v env_
+
+
+(*************)
+(* clean bil *)
+(*************)
 
 let rec remove_let_expr expr env =
   match expr with
@@ -128,24 +134,26 @@ let rec remove_let_stmt stmt =
 let remove_let_bil bil =
   List.map ~f:remove_let_stmt bil
 
-let endian_to_json endian =
+
+(***************)
+(* translation *)
+(***************)
+
+let json_size size =
+  `Int (size |> Size.in_bits)
+
+let json_word word =
+  let value = Word.string_of_value ~hex:false word in
+  let size = Word.bitwidth word in
+  wrap "Imm" "Integer" [`String value ; `Int size]
+
+let json_endian endian =
   let endian_s =
     match endian with
     | LittleEndian -> "LittleEndian"
     | BigEndian -> "BigEndian"
   in
   wrap "Endian" endian_s []
-
-let size_to_json size =
-  `Int (size |> Size.in_bits)
-
-let unop_to_json op =
-  let op_s =
-    match op with
-    | Bil.Types.NEG -> "NEG"
-    | Bil.Types.NOT -> "NOT"
-  in
-  wrap "UnOpKind" op_s []
 
 let binop_to_json op =
   let op_s =
@@ -179,8 +187,7 @@ let relop_to_json op =
     | _ -> raise Unexpected_RelOp
   in
   wrap "RelOpKind" op_s []
-
-let var_to_json var =
+let json_var var =
   let n =
     match Var.typ var with
     | Type.Imm (n) -> n
@@ -188,12 +195,7 @@ let var_to_json var =
   in
   wrap "Reg" "Variable" [`String (String.lowercase (Var.name var)) ; `Int n]
 
-let word_to_json word =
-  let value = Word.string_of_value ~hex:false word in
-  let size = Word.bitwidth word in
-  wrap "Imm" "Integer" [`String value ; `Int size]
-
-let castkind_to_json op =
+let build_json_cast op =
   let op_s =
     match op with
     | Bil.Types.UNSIGNED -> "ZeroExt"
@@ -226,14 +228,18 @@ let is_binop op =
   | Bil.Types.SLE -> false
 
 let rec build_json_expr expr =
+
+(* expression *)
+
+let rec json_expr expr =
   let wrap_expr st args = wrap "Expr" st args in
 
   match expr with
   | Bil.Load (_, e1, endian, s) ->
-      wrap_expr "Load" [build_json_expr e1 ; endian_to_json endian ; size_to_json s]
+      wrap_expr "Load" [json_expr e1 ; json_endian endian ; json_size s]
 
   | Bil.Store (_, e1, e2, endian, _) ->
-      wrap "Stmt" "Store" [build_json_expr e1 ; endian_to_json endian ; build_json_expr e2]
+      wrap "Stmt" "Store" [json_expr e1 ; json_endian endian ; json_expr e2]
 
   | Bil.BinOp (op, e1, e2) ->
       if is_binop op
@@ -246,13 +252,13 @@ let rec build_json_expr expr =
       wrap_expr "UnOp" [unop_to_json o ; build_json_expr e]
 
   | Bil.Var (v) ->
-      wrap_expr "Var" [var_to_json v]
+      wrap_expr "Var" [json_var v]
 
   | Bil.Int (w) ->
-      wrap_expr "Num" [word_to_json w]
+      wrap_expr "Num" [json_word w]
 
   | Bil.Cast (c, n, e) ->
-      wrap_expr "Cast" [castkind_to_json c ; `Int n ; build_json_expr e]
+      wrap_expr "Cast" [build_json_cast c ; `Int n ; json_expr e]
 
   | Bil.Let (v, e1, e2) -> raise Unexpected_Expr
 
@@ -260,7 +266,7 @@ let rec build_json_expr expr =
       wrap_expr "NotExpr" []
 
   | Bil.Ite (e1, e2, e3) ->
-      wrap_expr "Ite" [build_json_expr e1 ; build_json_expr e2 ; build_json_expr e3]
+      wrap_expr "Ite" [json_expr e1 ; json_expr e2 ; json_expr e3]
 
   | Bil.Extract (n1, n2, e) ->
       wrap_expr "Cast" [
@@ -269,41 +275,43 @@ let rec build_json_expr expr =
         wrap_expr "Cast" [
           (wrap "CastFrom" "Low" []) ;
           `Int (n1 + 1) ;
-          build_json_expr e]]
+          json_expr e]]
 
   | Bil.Concat (e1, e2) ->
       wrap_expr "BinOp" [
         (wrap "BinOpKind" "CONCAT" []) ;
-        build_json_expr e1 ;
-        build_json_expr e2]
+        json_expr e1 ;
+        json_expr e2]
 
 
-let rec build_json_stmt (num, idx, res) stmt =
+(* statement *)
+
+let rec json_stmt (num, idx, res) stmt =
   let wrap_stmt st args = wrap "Stmt" st args in
 
   match stmt with
   | Bil.Types.Move (v, e) ->
       let s = match e with
-        | Bil.Store (_, _, _, _, _) -> build_json_expr e
-        | _ -> wrap_stmt "Move" [var_to_json v ; build_json_expr e]
+        | Bil.Store (_, _, _, _, _) -> json_expr e
+        | _ -> wrap_stmt "Move" [json_var v ; json_expr e]
       in
       (num, idx, (s :: res))
 
   | Bil.Types.Jmp (e) ->
-      let s = wrap_stmt "End" [build_json_expr e] in
+      let s = wrap_stmt "End" [json_expr e] in
       (num, idx, (s :: res))
 
   | Bil.Types.Special (s) -> raise (Unhandled_Special s)
 
   | Bil.Types.While (e, sl) ->
-      let e_j = build_json_expr e in
+      let e_j = json_expr e in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
       let lab1 = wrap_stmt "Label" [`String s1] in
       let lab2 = wrap_stmt "Label" [`String s2] in
       let s = wrap_stmt "CJump" [e_j ; `String s1 ; `String s2] in
       let _, new_idx, sl_j =
-        List.fold_left ~f:build_json_stmt ~init:(num, idx + 2, []) sl in
+        List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl in
       let new_sl_j =
         match sl_j with
         | [] -> [wrap_stmt "End" [num]]
@@ -313,14 +321,14 @@ let rec build_json_stmt (num, idx, res) stmt =
       (num, new_idx, List.concat [(lab2 :: new_sl_j) ; (lab1 :: s :: res)])
 
   | Bil.Types.If (e, sl1, sl2) ->
-      let e_j = build_json_expr e in
+      let e_j = json_expr e in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
       let lab1 = wrap_stmt "Label" [`String s1] in
       let lab2 = wrap_stmt "Label" [`String s2] in
       let s = wrap_stmt "CJump" [e_j ; `String s1 ; `String s2] in
       let _, idx1, sl_j1 =
-        List.fold_left ~f:build_json_stmt ~init:(num, idx + 2, []) sl1 in
+        List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl1 in
       let new_sl_j1 =
         match sl_j1 with
         | [] -> [wrap_stmt "End" [num]]
@@ -328,7 +336,7 @@ let rec build_json_stmt (num, idx, res) stmt =
         | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j1
       in
       let _, idx2, sl_j2 =
-        List.fold_left ~f:build_json_stmt ~init:(num, idx1, []) sl2 in
+        List.fold_left ~f:json_stmt ~init:(num, idx1, []) sl2 in
       let new_sl_j2 =
         match sl_j2 with
         | [] -> [wrap_stmt "End" [num]]
@@ -339,14 +347,17 @@ let rec build_json_stmt (num, idx, res) stmt =
 
   | Bil.Types.CpuExn (_) -> raise Unhandled_CpuExn
 
-let build_json_bil len bil =
+
+(* abstract syntax tree *)
+
+let build_json_ast len bil =
   let imm =
     if Sys.argv.(1) = "32"
     then wrap "Imm" "Integer" [`Int (0x8048000 + len) ; `Int 32]
     else wrap "Imm" "Integer" [`Int (0x401000 + len) ; `Int 64]
   in
   let num = wrap "Expr" "Num" [imm] in
-  let _, _, l_rev = List.fold_left ~f:build_json_stmt ~init:(num, 0, []) bil in
+  let _, _, l_rev = List.fold_left ~f:json_stmt ~init:(num, 0, []) bil in
   let new_l_rev =
     match l_rev with
     | [] -> [wrap "Stmt" "End" [num]]
@@ -354,13 +365,6 @@ let build_json_bil len bil =
     | _ :: _ -> (wrap "Stmt" "End" [num]) :: l_rev
   in
   wrap "AST" "Stmts" (List.rev new_l_rev)
-
-let bap_to_json arch mem insn =
-  let module Target = (val target_of_arch arch) in
-  let bil = bil_of_insn Target.lift mem insn in
-  let bil_wo_let = remove_let_bil bil in
-  let bil_json = build_json_bil (Memory.length mem) bil_wo_let in
-  printf "%s\n" (Yojson.Basic.pretty_to_string bil_json)
 
 
 (********)
@@ -416,7 +420,16 @@ let _ =
     let bytes = Dis.run dis mem ~return:ident ~init:0
         ~stop_on:[`Valid] ~invalid:(bad_insn addr)
         ~hit:(fun state mem insn bytes ->
-          bap_to_json arch mem insn;
+
+          let module Target = (val target_of_arch arch) in
+
+          (* translate json *)
+          let bil = bil_of_insn Target.lift mem insn in
+          let bil' = remove_let_bil bil in
+          let json = build_json_ast (Memory.length mem) bil' in
+
+          printf "%s\n" (Yojson.Basic.pretty_to_string json);
+
           Dis.stop state bytes) in
     match String.length opc - bytes with
     | 0 -> Or_error.return ()
