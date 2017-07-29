@@ -164,7 +164,7 @@ let build_json_cast op =
   wrap "CastFrom" op_s []
 
 
-(* unary operator *)
+(* operators *)
 
 let json_unop op =
   let wrap t = "UnOp", (wrap "UnOpKind" t []) in
@@ -172,9 +172,6 @@ let json_unop op =
   match op with
     | Bil.Types.NEG -> wrap "NEG"
     | Bil.Types.NOT -> wrap "NOT"
-
-
-(* binary operator *)
 
 let json_binop op =
   let wrap_bin t = "BinOp", (wrap "BinOpT" t []) in
@@ -324,20 +321,23 @@ let rec json_stmt (num, idx, res) stmt =
 (* abstract syntax tree *)
 
 let build_json_ast len bil =
-  let imm =
-    if Sys.argv.(1) = "32"
-    then wrap "Imm" "Integer" [`Int (0x8048000 + len) ; `Int 32]
-    else wrap "Imm" "Integer" [`Int (0x401000 + len) ; `Int 64]
-  in
+  let imm = if Sys.argv.(1) = "32"
+            then wrap "Imm" "Integer" [`Int (0x8048000 + len) ; `Int 32]
+            else wrap "Imm" "Integer" [`Int (0x401000 + len) ; `Int 64] in
   let num = wrap "Expr" "Num" [imm] in
-  let _, _, l_rev = List.fold_left ~f:json_stmt ~init:(num, 0, []) bil in
-  let new_l_rev =
-    match l_rev with
+
+  (* translate *)
+  let _, _, stmts_rev = List.fold_left ~f:json_stmt ~init:(num, 0, []) bil in
+  (* add missing end stmt *)
+  let stmts_rev' =
+    match stmts_rev with
     | [] -> [wrap "Stmt" "End" [num]]
-    | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> l_rev
-    | _ :: _ -> (wrap "Stmt" "End" [num]) :: l_rev
+    | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> stmts_rev
+    | _ :: _ -> (wrap "Stmt" "End" [num]) :: stmts_rev
   in
-  wrap "AST" "Stmts" (List.rev new_l_rev)
+  let stmts = (List.rev stmts_rev') in
+
+  wrap "AST" "Stmts" stmts
 
 
 (********)
