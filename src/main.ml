@@ -7,7 +7,6 @@ exception Bad_insn of mem * int * int
 exception Create_mem of Error.t
 exception Trailing_data of int
 
-exception Unexpected_Op
 exception Unexpected_Expr
 exception Unexpected_Stmt
 
@@ -211,7 +210,6 @@ let json_binop op =
     | Bil.Types.LE -> wrap_rel "LE"
     | Bil.Types.SLT -> wrap_rel "SLT"
     | Bil.Types.SLE -> wrap_rel "SLE"
-    | _ -> raise Unexpected_Op
 
 
 (* expression *)
