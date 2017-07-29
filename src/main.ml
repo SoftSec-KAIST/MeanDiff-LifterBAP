@@ -320,21 +320,21 @@ let rec json_stmt (num, idx, res) stmt =
 
 (* abstract syntax tree *)
 
-let build_json_ast len bil =
-  let imm = if Sys.argv.(1) = "32"
+let json_ast len bil =
+  (* TODO: pass arch and match instead of argv.(1) *)
+  let imm = if Sys.argv.(1) = "x86"
             then wrap "Imm" "Integer" [json_int (0x8048000 + len) ; json_int 32]
             else wrap "Imm" "Integer" [json_int (0x401000 + len) ; json_int 64] in
   let num = wrap "Expr" "Num" [imm] in
+  let end_stmt = wrap "Stmt" "End" [num] in
 
   (* translate *)
   let _, _, stmts_rev = List.fold_left ~f:json_stmt ~init:(num, 0, []) bil in
   (* add missing end stmt *)
-  let stmts_rev' =
-    match stmts_rev with
-    | [] -> [wrap "Stmt" "End" [num]]
-    | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> stmts_rev
-    | _ :: _ -> (wrap "Stmt" "End" [num]) :: stmts_rev
-  in
+  let stmts_rev' = if (List.nth stmts_rev 0) = end_stmt
+                   then stmts_rev
+                   else end_stmt :: stmts_rev in
+  (* reverse order *)
   let stmts = (List.rev stmts_rev') in
 
   wrap "AST" "Stmts" stmts
@@ -409,7 +409,7 @@ let _ =
               | Error e -> [Bil.special @@ sprintf "Lifter: %s" @@ Error.to_string_hum e]
           in
           let bil' = remove_let_bil bil in
-          let json = build_json_ast (Memory.length mem) bil' in
+          let json = json_ast (Memory.length mem) bil' in
 
           (* pretty print *)
           printf "%s\n" (Yojson.Basic.pretty_to_string json);
