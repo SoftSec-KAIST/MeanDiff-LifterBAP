@@ -126,7 +126,7 @@ let remove_let_bil bil =
 (***************)
 
 let json_size size =
-  `Int (size |> Size.in_bits)
+  `Int (Size.in_bits size)
 
 let json_word word =
   let value = Word.string_of_value ~hex:false word in
