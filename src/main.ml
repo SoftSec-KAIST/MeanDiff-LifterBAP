@@ -275,7 +275,6 @@ let rec json_stmt (num, idx, res) stmt =
 
   | Bil.Types.While (e, sl) ->
       let e_j = json_expr e in
-      let end_stmt = wrap_stmt "End" [num] in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
       let lab1 = wrap_stmt "Label" [json_string s1] in
@@ -285,15 +284,17 @@ let rec json_stmt (num, idx, res) stmt =
       let _, new_idx, sl_j =
         List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl in
       (* add missing end *)
-      let new_sl_j = if (List.nth sl_j 0) = end_stmt
-                      then sl_j
-                      else end_stmt :: sl_j in
+      let new_sl_j =
+        match sl_j with
+        | [] -> [wrap_stmt "End" [num]]
+        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j
+        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j
+      in
 
       (num, new_idx, List.concat [(lab2 :: new_sl_j) ; (lab1 :: s :: res)])
 
   | Bil.Types.If (e, sl1, sl2) ->
       let e_j = json_expr e in
-      let end_stmt = wrap_stmt "End" [num] in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
       let lab1 = wrap_stmt "Label" [json_string s1] in
@@ -303,16 +304,22 @@ let rec json_stmt (num, idx, res) stmt =
       let _, idx1, sl_j1 =
         List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl1 in
       (* add missing end *)
-      let new_sl_j1 = if (List.nth sl_j1 0) = end_stmt
-                      then sl_j1
-                      else end_stmt :: sl_j1 in
+      let new_sl_j1 =
+        match sl_j1 with
+        | [] -> [wrap_stmt "End" [num]]
+        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j1
+        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j1
+      in
 
       let _, idx2, sl_j2 =
         List.fold_left ~f:json_stmt ~init:(num, idx1, []) sl2 in
       (* add missing end *)
-      let new_sl_j2 = if (List.nth sl_j2 0) = end_stmt
-                      then sl_j2
-                      else end_stmt :: sl_j2 in
+      let new_sl_j2 =
+        match sl_j2 with
+        | [] -> [wrap_stmt "End" [num]]
+        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j2
+        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j2
+      in
 
       (num, idx2, (List.concat [new_sl_j2 ; (lab2 :: new_sl_j1) ; (lab1 :: s :: res)]))
 
@@ -327,14 +334,16 @@ let json_ast len bil =
             then wrap "Imm" "Integer" [json_int (0x8048000 + len) ; json_int 32]
             else wrap "Imm" "Integer" [json_int (0x401000 + len) ; json_int 64] in
   let num = wrap "Expr" "Num" [imm] in
-  let end_stmt = wrap "Stmt" "End" [num] in
 
   (* translate *)
   let _, _, stmts_rev = List.fold_left ~f:json_stmt ~init:(num, 0, []) bil in
   (* add missing end stmt *)
-  let stmts_rev' = if (List.nth stmts_rev 0) = end_stmt
-                   then stmts_rev
-                   else end_stmt :: stmts_rev in
+  let stmts_rev' =
+    match stmts_rev with
+    | [] -> [wrap "Stmt" "End" [num]]
+    | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> stmts_rev
+    | _ :: _ -> (wrap "Stmt" "End" [num]) :: stmts_rev
+  in
   (* reverse order *)
   let stmts = (List.rev stmts_rev') in
 
