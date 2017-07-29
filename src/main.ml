@@ -125,13 +125,17 @@ let remove_let_bil bil =
 (* translation *)
 (***************)
 
+let json_int i = `Int i
+
+let json_string s = `String s
+
 let json_size size =
-  `Int (Size.in_bits size)
+  json_int (Size.in_bits size)
 
 let json_word word =
   let value = Word.string_of_value ~hex:false word in
   let size = Word.bitwidth word in
-  wrap "Imm" "Integer" [`String value ; `Int size]
+  wrap "Imm" "Integer" [json_string value ; json_int size]
 
 let json_endian endian =
   let endian_s =
@@ -147,9 +151,9 @@ let json_var var =
     | Type.Imm (n) -> n
     | Type.Mem (n, _) -> Size.in_bits n
   in
-  wrap "Reg" "Variable" [`String (String.lowercase (Var.name var)) ; `Int n]
+  wrap "Reg" "Variable" [json_string (String.lowercase (Var.name var)) ; json_int n]
 
-let build_json_cast op =
+let json_cast op =
   let op_s =
     match op with
     | Bil.Types.UNSIGNED -> "ZeroExt"
@@ -224,7 +228,7 @@ let rec json_expr expr =
       wrap_expr "Num" [json_word w]
 
   | Bil.Cast (c, n, e) ->
-      wrap_expr "Cast" [build_json_cast c ; `Int n ; json_expr e]
+      wrap_expr "Cast" [json_cast c ; json_int n ; json_expr e]
 
   | Bil.Let (v, e1, e2) -> raise Unexpected_Expr
 
@@ -237,10 +241,10 @@ let rec json_expr expr =
   | Bil.Extract (n1, n2, e) ->
       wrap_expr "Cast" [
         (wrap "CastFrom" "High" []) ;
-        `Int (n1 - n2 + 1) ;
+        json_int (n1 - n2 + 1) ;
         wrap_expr "Cast" [
           (wrap "CastFrom" "Low" []) ;
-          `Int (n1 + 1) ;
+          json_int (n1 + 1) ;
           json_expr e]]
 
   | Bil.Concat (e1, e2) ->
@@ -273,9 +277,9 @@ let rec json_stmt (num, idx, res) stmt =
       let e_j = json_expr e in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
-      let lab1 = wrap_stmt "Label" [`String s1] in
-      let lab2 = wrap_stmt "Label" [`String s2] in
-      let s = wrap_stmt "CJump" [e_j ; `String s1 ; `String s2] in
+      let lab1 = wrap_stmt "Label" [json_string s1] in
+      let lab2 = wrap_stmt "Label" [json_string s2] in
+      let s = wrap_stmt "CJump" [e_j ; json_string s1 ; json_string s2] in
       let _, new_idx, sl_j =
         List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl in
       let new_sl_j =
@@ -290,9 +294,9 @@ let rec json_stmt (num, idx, res) stmt =
       let e_j = json_expr e in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
-      let lab1 = wrap_stmt "Label" [`String s1] in
-      let lab2 = wrap_stmt "Label" [`String s2] in
-      let s = wrap_stmt "CJump" [e_j ; `String s1 ; `String s2] in
+      let lab1 = wrap_stmt "Label" [json_string s1] in
+      let lab2 = wrap_stmt "Label" [json_string s2] in
+      let s = wrap_stmt "CJump" [e_j ; json_string s1 ; json_string s2] in
       let _, idx1, sl_j1 =
         List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl1 in
       let new_sl_j1 =
@@ -318,8 +322,8 @@ let rec json_stmt (num, idx, res) stmt =
 
 let build_json_ast len bil =
   let imm = if Sys.argv.(1) = "32"
-            then wrap "Imm" "Integer" [`Int (0x8048000 + len) ; `Int 32]
-            else wrap "Imm" "Integer" [`Int (0x401000 + len) ; `Int 64] in
+            then wrap "Imm" "Integer" [json_int (0x8048000 + len) ; json_int 32]
+            else wrap "Imm" "Integer" [json_int (0x401000 + len) ; json_int 64] in
   let num = wrap "Expr" "Num" [imm] in
 
   (* translate *)
