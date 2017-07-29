@@ -19,6 +19,18 @@ exception Unhandled_Special of string
 
 module Dis = Disasm_expert.Basic
 
+
+(*********)
+(* utils *)
+(*********)
+
+let wrap t st args = `Assoc [
+    ("Type", `String t) ;
+    ("SubType", `String st) ;
+    ("Args", `List args)
+  ]
+
+
 let to_binary ?(map=ident) s =
   let seps = [' '; ','; ';'] in
   let separated = List.exists seps ~f:(String.mem s) in
@@ -133,8 +145,7 @@ let endian_to_json endian =
     | LittleEndian -> "LittleEndian"
     | BigEndian -> "BigEndian"
   in
-  `Assoc [("Type", `String "Endian") ; ("SubType", `String endian_s) ;
-      ("Args", `List [])]
+  wrap "Endian" endian_s []
 
 let size_to_json size =
   `Int (size |> Size.in_bits)
@@ -145,8 +156,7 @@ let unop_to_json op =
     | Bil.Types.NEG -> "NEG"
     | Bil.Types.NOT -> "NOT"
   in
-  `Assoc [("Type", `String "UnOpKind") ; ("SubType", `String op_s) ;
-      ("Args", `List [])]
+  wrap "UnOpKind" op_s []
 
 let binop_to_json op =
   let op_s =
@@ -166,8 +176,7 @@ let binop_to_json op =
     | Bil.Types.XOR -> "XOR"
     | _ -> raise Unexpected_BinOp
   in
-  `Assoc [("Type", `String "BinOpKind") ; ("SubType", `String op_s) ;
-      ("Args", `List [])]
+  wrap "BinOpKind" op_s []
 
 let relop_to_json op =
   let op_s =
@@ -180,8 +189,7 @@ let relop_to_json op =
     | Bil.Types.SLE -> "SLE"
     | _ -> raise Unexpected_RelOp
   in
-  `Assoc [("Type", `String "RelOpKind") ; ("SubType", `String op_s) ;
-    ("Args", `List [])]
+  wrap "RelOpKind" op_s []
 
 let var_to_json var =
   let n =
@@ -189,14 +197,12 @@ let var_to_json var =
     | Type.Imm (n) -> n
     | Type.Mem (n, _) -> Size.in_bits n
   in
-  `Assoc [("Type", `String "Reg") ; ("SubType", `String "Variable") ;
-      ("Args", `List [`String (String.lowercase (Var.name var)) ; `Int n])]
+  wrap "Reg" "Variable" [`String (String.lowercase (Var.name var)) ; `Int n]
 
 let word_to_json word =
   let value = Word.string_of_value ~hex:false word in
   let size = Word.bitwidth word in
-  `Assoc [("Type", `String "Imm") ; ("SubType", `String "Integer") ;
-      ("Args", `List [`String value ; `Int size])]
+  wrap "Imm" "Integer" [`String value ; `Int size]
 
 let castkind_to_json op =
   let op_s =
@@ -206,8 +212,7 @@ let castkind_to_json op =
     | Bil.Types.HIGH -> "High"
     | Bil.Types.LOW -> "Low"
   in
-  `Assoc [("Type", `String "CastFrom") ; ("SubType", `String op_s) ;
-      ("Args", `List [])]
+  wrap "CastFrom" op_s []
 
 let is_binop op =
   match op with
@@ -232,183 +237,134 @@ let is_binop op =
   | Bil.Types.SLE -> false
 
 let rec build_json_expr expr =
+  let wrap_expr st args = wrap "Expr" st args in
+
   match expr with
   | Bil.Load (_, e1, endian, s) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "Load") ;
-          ("Args", `List [build_json_expr e1 ; endian_to_json endian ;
-                            size_to_json s])]
+      wrap_expr "Load" [build_json_expr e1 ; endian_to_json endian ; size_to_json s]
+
   | Bil.Store (_, e1, e2, endian, _) ->
-      `Assoc [("Type", `String "Stmt") ; ("SubType", `String "Store") ;
-          ("Args", `List [build_json_expr e1 ; endian_to_json endian ;
-                            build_json_expr e2])]
-  | Bil.BinOp (o, e1, e2) ->
-      if is_binop o
+      wrap "Stmt" "Store" [build_json_expr e1 ; endian_to_json endian ; build_json_expr e2]
+
+  | Bil.BinOp (op, e1, e2) ->
+      if is_binop op
       then
-        `Assoc [("Type", `String "Expr") ; ("SubType", `String "BinOp") ;
-            ("Args", `List [binop_to_json o ; build_json_expr e1 ;
-                              build_json_expr e2])]
+        wrap_expr "BinOp" [binop_to_json op ; build_json_expr e1 ; build_json_expr e2]
       else
-        `Assoc [("Type", `String "Expr") ; ("SubType", `String "RelOp") ;
-            ("Args", `List [relop_to_json o ; build_json_expr e1 ;
-                              build_json_expr e2])]
+        wrap_expr "RelOp" [relop_to_json op ; build_json_expr e1 ; build_json_expr e2]
+
   | Bil.UnOp (o, e) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "UnOp") ;
-          ("Args", `List [unop_to_json o ; build_json_expr e])]
+      wrap_expr "UnOp" [unop_to_json o ; build_json_expr e]
+
   | Bil.Var (v) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "Var") ;
-          ("Args", `List [var_to_json v])]
+      wrap_expr "Var" [var_to_json v]
+
   | Bil.Int (w) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "Num") ;
-          ("Args", `List [word_to_json w])]
+      wrap_expr "Num" [word_to_json w]
+
   | Bil.Cast (c, n, e) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "Cast") ;
-          ("Args", `List [castkind_to_json c ; `Int n ; build_json_expr e])]
+      wrap_expr "Cast" [castkind_to_json c ; `Int n ; build_json_expr e]
+
   | Bil.Let (v, e1, e2) -> raise Unexpected_Expr
+
   | Bil.Unknown (_, _) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "NotExpr") ;
-          ("Args", `List [])]
+      wrap_expr "NotExpr" []
+
   | Bil.Ite (e1, e2, e3) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "Ite") ;
-          ("Args", `List [build_json_expr e1 ; build_json_expr e2 ;
-                            build_json_expr e3])]
+      wrap_expr "Ite" [build_json_expr e1 ; build_json_expr e2 ; build_json_expr e3]
+
   | Bil.Extract (n1, n2, e) ->
-      let c1 =
-        `Assoc [("Type", `String "Expr") ; ("SubType", `String "Cast") ;
-            ("Args", `List [`Assoc [("Type", `String "CastFrom") ;
-                                ("SubType", `String "Low") ;
-                                ("Args", `List [])] ;
-                            `Int (n1 + 1) ; build_json_expr e])] in
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "Cast") ;
-          ("Args", `List [`Assoc [("Type", `String "CastFrom") ;
-                              ("SubType", `String "High") ;
-                              ("Args", `List [])] ;
-                          `Int (n1 - n2 + 1) ; c1])]
+      wrap_expr "Cast" [
+        (wrap "CastFrom" "High" []) ;
+        `Int (n1 - n2 + 1) ;
+        wrap_expr "Cast" [
+          (wrap "CastFrom" "Low" []) ;
+          `Int (n1 + 1) ;
+          build_json_expr e]]
+
   | Bil.Concat (e1, e2) ->
-      `Assoc [("Type", `String "Expr") ; ("SubType", `String "BinOp") ;
-          ("Args", `List [`Assoc [("Type", `String "BinOpKind") ;
-                              ("SubType", `String "CONCAT") ;
-                              ("Args", `List [])] ;
-                          build_json_expr e1 ; build_json_expr e2])]
+      wrap_expr "BinOp" [
+        (wrap "BinOpKind" "CONCAT" []) ;
+        build_json_expr e1 ;
+        build_json_expr e2]
+
 
 let rec build_json_stmt (num, idx, res) stmt =
+  let wrap_stmt st args = wrap "Stmt" st args in
+
   match stmt with
   | Bil.Types.Move (v, e) ->
-      let s =
-        match e with
+      let s = match e with
         | Bil.Store (_, _, _, _, _) -> build_json_expr e
-        | _ ->
-            `Assoc [("Type", `String "Stmt") ; ("SubType", `String "Move") ;
-                ("Args", `List [var_to_json v ; build_json_expr e])]
+        | _ -> wrap_stmt "Move" [var_to_json v ; build_json_expr e]
       in
       (num, idx, (s :: res))
+
   | Bil.Types.Jmp (e) ->
-      let s =
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-            ("Args", `List [build_json_expr e])]
-      in
+      let s = wrap_stmt "End" [build_json_expr e] in
       (num, idx, (s :: res))
+
   | Bil.Types.Special (s) -> raise (Unhandled_Special s)
+
   | Bil.Types.While (e, sl) ->
       let e_j = build_json_expr e in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
-      let lab1 =
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "label") ;
-            ("Args", `List [`String s1])]
-      in
-      let lab2 =
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "label") ;
-            ("Args", `List [`String s2])]
-      in
-      let s =
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "CJump") ;
-            ("Args", `List [e_j ; `String s1 ; `String s2])]
-      in
+      let lab1 = wrap_stmt "Label" [`String s1] in
+      let lab2 = wrap_stmt "Label" [`String s2] in
+      let s = wrap_stmt "CJump" [e_j ; `String s1 ; `String s2] in
       let _, new_idx, sl_j =
         List.fold_left ~f:build_json_stmt ~init:(num, idx + 2, []) sl in
       let new_sl_j =
         match sl_j with
-        | [] ->
-            [`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-                ("Args", `List [num])]]
-        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ ->
-            sl_j
-        | _ :: _ ->
-            `Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-                ("Args", `List [num])] :: sl_j
+        | [] -> [wrap_stmt "End" [num]]
+        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j
+        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j
       in
       (num, new_idx, List.concat [(lab2 :: new_sl_j) ; (lab1 :: s :: res)])
+
   | Bil.Types.If (e, sl1, sl2) ->
       let e_j = build_json_expr e in
       let s1 = sprintf "Label%d" idx in
       let s2 = sprintf "Label%d" (idx + 1) in
-      let lab1 =
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "Label") ;
-            ("Args", `List [`String s1])]
-      in
-      let lab2 =
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "Label") ;
-            ("Args", `List [`String s2])]
-      in
-      let s =
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "CJump") ;
-            ("Args", `List [e_j ; `String s1 ; `String s2])]
-      in
+      let lab1 = wrap_stmt "Label" [`String s1] in
+      let lab2 = wrap_stmt "Label" [`String s2] in
+      let s = wrap_stmt "CJump" [e_j ; `String s1 ; `String s2] in
       let _, idx1, sl_j1 =
         List.fold_left ~f:build_json_stmt ~init:(num, idx + 2, []) sl1 in
       let new_sl_j1 =
         match sl_j1 with
-        | [] ->
-            [`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-                ("Args", `List [num])]]
-        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ ->
-            sl_j1
-        | _ :: _ ->
-            `Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-                ("Args", `List [num])] :: sl_j1
+        | [] -> [wrap_stmt "End" [num]]
+        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j1
+        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j1
       in
       let _, idx2, sl_j2 =
         List.fold_left ~f:build_json_stmt ~init:(num, idx1, []) sl2 in
       let new_sl_j2 =
         match sl_j2 with
-        | [] ->
-            [`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-                ("Args", `List [num])]]
-        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ ->
-            sl_j2
-        | _ :: _ ->
-            `Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-                ("Args", `List [num])] :: sl_j2
+        | [] -> [wrap_stmt "End" [num]]
+        | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j2
+        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j2
       in
       (num, idx2, (List.concat [new_sl_j2 ; (lab2 :: new_sl_j1) ; (lab1 :: s :: res)]))
+
   | Bil.Types.CpuExn (_) -> raise Unhandled_CpuExn
 
 let build_json_bil len bil =
   let imm =
     if Sys.argv.(1) = "32"
-    then
-      `Assoc [("Type", `String "Imm") ; ("SubType", `String "Integer") ;
-                ("Args", `List [`Int (0x8048000 + len) ; `Int 32])]
-    else
-      `Assoc [("Type", `String "Imm") ; ("SubType", `String "Integer") ;
-                ("Args", `List [`Int (0x401000 + len) ; `Int 64])]
+    then wrap "Imm" "Integer" [`Int (0x8048000 + len) ; `Int 32]
+    else wrap "Imm" "Integer" [`Int (0x401000 + len) ; `Int 64]
   in
-  let num = `Assoc [("Type", `String "Expr") ; ("SubType", `String "Num") ;
-                ("Args", `List [imm])] in
+  let num = wrap "Expr" "Num" [imm] in
   let _, _, l_rev = List.fold_left ~f:build_json_stmt ~init:(num, 0, []) bil in
   let new_l_rev =
     match l_rev with
-    | [] ->
-        [`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-            ("Args", `List [num])]]
-    | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ ->
-        l_rev
-    | _ :: _ ->
-        `Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ;
-            ("Args", `List [num])] :: l_rev
+    | [] -> [wrap "Stmt" "End" [num]]
+    | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> l_rev
+    | _ :: _ -> (wrap "Stmt" "End" [num]) :: l_rev
   in
-  `Assoc [("Type", `String "AST") ; ("SubType", `String "Stmts") ;
-      ("Args", `List (List.rev new_l_rev))]
+  wrap "AST" "Stmts" (List.rev new_l_rev)
 
 let bap_to_json arch mem insn =
   let module Target = (val target_of_arch arch) in
@@ -418,6 +374,7 @@ let bap_to_json arch mem insn =
   printf "%s\n" (Yojson.Basic.pretty_to_string bil_json)
 
 (* Argument Setting *)
+
 let arch = if Sys.argv.(1) = "32"
   then
     match Arch.of_string "x86" with
