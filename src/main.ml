@@ -7,7 +7,6 @@ exception Bad_user_input
 exception Bad_insn of mem * int * int
 exception Create_mem of Error.t
 exception Trailing_data of int
-exception Unknown_arch
 
 exception Unexpected_BinOp
 exception Unexpected_RelOp
@@ -30,7 +29,6 @@ let wrap t st args = `Assoc [
     ("Args", `List args)
   ]
 
-
 let to_binary ?(map=ident) s =
   let seps = [' '; ','; ';'] in
   let separated = List.exists seps ~f:(String.mem s) in
@@ -40,12 +38,6 @@ let to_binary ?(map=ident) s =
         String.slice s (n * 2) (n * 2 + 2)) in
   try bytes |> List.map ~f:map |> String.concat |> Scanf.unescaped
   with Scanf.Scan_failure _ -> raise Bad_user_input
-
-let read_input input =
-  let prepend_slash_x x = "\\x" ^ x in
-  match String.prefix input 2 with
-    | "" | "\n" -> exit 0
-    | x -> to_binary ~map:prepend_slash_x input
 
 let create_memory arch s addr =
   let endian = Arch.endian arch in
@@ -373,27 +365,55 @@ let bap_to_json arch mem insn =
   let bil_json = build_json_bil (Memory.length mem) bil_wo_let in
   printf "%s\n" (Yojson.Basic.pretty_to_string bil_json)
 
-(* Argument Setting *)
 
-let arch = if Sys.argv.(1) = "32"
-  then
-    match Arch.of_string "x86" with
-    | None -> raise Unknown_arch
-    | Some arch -> arch
-  else
-    match Arch.of_string "x86_64" with
-    | None -> raise Unknown_arch
-    | Some arch -> arch
+(********)
+(* main *)
+(********)
 
-let size = if Sys.argv.(1) = "32" then ":32" else ":64"
-let addr = Addr.of_string
-              (if Sys.argv.(1) = "32" then "0x08048000" ^ size
-                                      else "0x401000" ^ size)
-let input = read_input Sys.argv.(2)
-let mem = create_memory arch input addr
-let backend = "llvm"
+let usage = "usage: " ^ Sys.argv.(0) ^ " <arch> <opcode>"
+
+let parse_args () =
+  let len = Array.length Sys.argv in
+
+  try
+    match len with
+      | x when x <> 3 -> raise (Arg.Bad "Wrong number of arguments given")
+      | _ ->
+        begin
+          let arch =
+            match Arch.of_string Sys.argv.(1) with
+              | None -> raise (Arg.Bad "Unknown architecture")
+              | Some arch -> arch
+          in
+          let prepend_slash_x x = "\\x" ^ x in
+          let opc =
+            match String.prefix Sys.argv.(2) 2 with
+              | "" | "\n" -> raise (Arg.Bad "Bad input")
+              | x -> to_binary ~map:prepend_slash_x Sys.argv.(2)
+          in
+
+          (arch, opc)
+        end
+
+  with Arg.Bad s ->
+    Printf.eprintf "[error] %s" s;
+    Printf.eprintf "%s" usage;
+    exit 1
 
 let _ =
+  (* parse arguments *)
+  let arch, opc = parse_args () in
+
+  (* set params *)
+  (* TODO: match arch and not string *)
+  let size = if Sys.argv.(1) = "x86" then ":32" else ":64" in
+  let addr = Addr.of_string (if Sys.argv.(1) = "x86"
+                             then "0x08048000" ^ size
+                             else "0x401000" ^ size) in
+  let mem = create_memory arch opc addr in
+  let backend = "llvm" in
+
+  (* lift *)
   ignore (Plugins.load ());
   Dis.with_disasm ~backend (Arch.to_string arch) ~f:(fun dis ->
     let bytes = Dis.run dis mem ~return:ident ~init:0
@@ -401,7 +421,7 @@ let _ =
         ~hit:(fun state mem insn bytes ->
           bap_to_json arch mem insn;
           Dis.stop state bytes) in
-    match String.length input - bytes with
+    match String.length opc - bytes with
     | 0 -> Or_error.return ()
   (*  | n -> raise (Trailing_data n) *)
     | _ -> Or_error.return ())
