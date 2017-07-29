@@ -3,7 +3,7 @@ open Bap_plugins.Std
 open Core_kernel.Std
 open Yojson.Basic.Util
 
-exception Bad_insn of mem * int * int
+exception Bad_inst of mem * int * int
 exception Create_mem of Error.t
 exception Trailing_data of int
 
@@ -42,10 +42,6 @@ let create_memory arch s addr =
   Bigstring.of_string s |> function
     | Ok r -> r
     | Error e -> raise (Create_mem e)
-
-let bad_insn addr state mem start =
-  let stop = Addr.(Dis.addr state - addr |> to_int |> ok_exn) in
-  raise (Bad_insn (Dis.memory state, start, stop))
 
 let rec lookup_env v env =
   match env with
@@ -390,8 +386,14 @@ let _ =
   (* lift *)
   ignore (Plugins.load ());
   Dis.with_disasm ~backend (Arch.to_string arch) ~f:(fun dis ->
-    let bytes = Dis.run dis mem ~return:ident ~init:0
-        ~stop_on:[`Valid] ~invalid:(bad_insn addr)
+    (* disassemble *)
+    let bytes = Dis.run dis mem ~return:ident ~init:0 ~stop_on:[`Valid]
+        (* fail *)
+        ~invalid:(fun state mem start ->
+          let stop = Addr.(Dis.addr state - addr |> to_int |> ok_exn) in
+          raise (Bad_inst (Dis.memory state, start, stop)))
+
+        (* success *)
         ~hit:(fun state mem insn bytes ->
 
           let module Target = (val target_of_arch arch) in
@@ -405,9 +407,12 @@ let _ =
           let bil' = remove_let_bil bil in
           let json = build_json_ast (Memory.length mem) bil' in
 
+          (* pretty print *)
           printf "%s\n" (Yojson.Basic.pretty_to_string json);
 
-          Dis.stop state bytes) in
+          Dis.stop state bytes
+        ) in
+
     match String.length opc - bytes with
     | 0 -> Or_error.return ()
   (*  | n -> raise (Trailing_data n) *)
