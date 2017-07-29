@@ -140,10 +140,10 @@ let json_word word =
 let json_endian endian =
   let endian_s =
     match endian with
-    | LittleEndian -> "LittleEndian"
-    | BigEndian -> "BigEndian"
+    | LittleEndian -> "LE"
+    | BigEndian -> "BE"
   in
-  wrap "Endian" endian_s []
+  wrap "EndianT" endian_s []
 
 let json_var var =
   let n =
