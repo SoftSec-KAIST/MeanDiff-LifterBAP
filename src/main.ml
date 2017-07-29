@@ -3,7 +3,6 @@ open Bap_plugins.Std
 open Core_kernel.Std
 open Yojson.Basic.Util
 
-exception Bad_user_input
 exception Bad_insn of mem * int * int
 exception Create_mem of Error.t
 exception Trailing_data of int
@@ -37,7 +36,7 @@ let to_binary ?(map=ident) s =
     else List.init (String.length s / 2) ~f:(fun n ->
         String.slice s (n * 2) (n * 2 + 2)) in
   try bytes |> List.map ~f:map |> String.concat |> Scanf.unescaped
-  with Scanf.Scan_failure _ -> raise Bad_user_input
+  with Scanf.Scan_failure _ -> raise (Arg.Bad "Bad input")
 
 let create_memory arch s addr =
   let endian = Arch.endian arch in
@@ -394,8 +393,8 @@ let parse_args () =
         end
 
   with Arg.Bad s ->
-    Printf.eprintf "[error] %s" s;
-    Printf.eprintf "%s" usage;
+    Printf.eprintf "[error] %s\n" s;
+    Printf.eprintf "%s\n" usage;
     exit 1
 
 let _ =
