@@ -47,14 +47,6 @@ let bad_insn addr state mem start =
   let stop = Addr.(Dis.addr state - addr |> to_int |> ok_exn) in
   raise (Bad_insn (Dis.memory state, start, stop))
 
-let bil_of_insn lift mem insn =
-  match lift mem insn with
-  | Ok bil -> bil
-  | Error e -> [Bil.special @@ sprintf "Lifter: %s" @@ Error.to_string_hum e]
-
-
-(* My Section *)
-
 let rec lookup_env v env =
   match env with
   | [] -> None
@@ -405,7 +397,11 @@ let _ =
           let module Target = (val target_of_arch arch) in
 
           (* translate json *)
-          let bil = bil_of_insn Target.lift mem insn in
+          let bil =
+            match Target.lift mem insn with
+              | Ok bil -> bil
+              | Error e -> [Bil.special @@ sprintf "Lifter: %s" @@ Error.to_string_hum e]
+          in
           let bil' = remove_let_bil bil in
           let json = build_json_ast (Memory.length mem) bil' in
 
