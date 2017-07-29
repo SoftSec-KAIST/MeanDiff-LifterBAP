@@ -156,12 +156,12 @@ let json_var var =
 let json_cast op =
   let op_s =
     match op with
-    | Bil.Types.UNSIGNED -> "ZeroExt"
-    | Bil.Types.SIGNED -> "SignExt"
-    | Bil.Types.HIGH -> "High"
-    | Bil.Types.LOW -> "Low"
+    | Bil.Types.UNSIGNED -> "ZERO"
+    | Bil.Types.SIGNED -> "SIGN"
+    | Bil.Types.HIGH -> "HIGH"
+    | Bil.Types.LOW -> "LOW"
   in
-  wrap "CastFrom" op_s []
+  wrap "CastOpT" op_s []
 
 
 (* operators *)
@@ -240,10 +240,10 @@ let rec json_expr expr =
 
   | Bil.Extract (n1, n2, e) ->
       wrap_expr "Cast" [
-        (wrap "CastFrom" "High" []) ;
+        (wrap "CastOpT" "HIGH" []) ;
         json_int (n1 - n2 + 1) ;
         wrap_expr "Cast" [
-          (wrap "CastFrom" "Low" []) ;
+          (wrap "CastOpT" "LOW" []) ;
           json_int (n1 + 1) ;
           json_expr e]]
 
