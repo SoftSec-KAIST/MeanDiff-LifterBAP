@@ -55,8 +55,6 @@ let bil_of_insn lift mem insn =
   | Ok bil -> bil
   | Error e -> [Bil.special @@ sprintf "Lifter: %s" @@ Error.to_string_hum e]
 
-let get_bil lift mem insn =
-  bil_of_insn lift mem insn
 
 (* My Section *)
 let rec lookup_env v env =
@@ -360,7 +358,7 @@ let build_json_bil len bil =
 
 let bap_to_json arch mem insn =
   let module Target = (val target_of_arch arch) in
-  let bil = get_bil Target.lift mem insn in
+  let bil = bil_of_insn Target.lift mem insn in
   let bil_wo_let = remove_let_bil bil in
   let bil_json = build_json_bil (Memory.length mem) bil_wo_let in
   printf "%s\n" (Yojson.Basic.pretty_to_string bil_json)
