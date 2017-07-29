@@ -7,8 +7,7 @@ exception Bad_insn of mem * int * int
 exception Create_mem of Error.t
 exception Trailing_data of int
 
-exception Unexpected_BinOp
-exception Unexpected_RelOp
+exception Unexpected_Op
 exception Unexpected_Expr
 exception Unexpected_Stmt
 
@@ -155,38 +154,6 @@ let json_endian endian =
   in
   wrap "Endian" endian_s []
 
-let binop_to_json op =
-  let op_s =
-    match op with
-    | Bil.Types.PLUS -> "ADD"
-    | Bil.Types.MINUS -> "SUB"
-    | Bil.Types.TIMES -> "MUL"
-    | Bil.Types.DIVIDE -> "DIV"
-    | Bil.Types.SDIVIDE -> "SDIV"
-    | Bil.Types.MOD -> "MOD"
-    | Bil.Types.SMOD -> "SMOD"
-    | Bil.Types.LSHIFT -> "SHL"
-    | Bil.Types.RSHIFT -> "SHR"
-    | Bil.Types.ARSHIFT -> "SAR"
-    | Bil.Types.AND -> "AND"
-    | Bil.Types.OR -> "OR"
-    | Bil.Types.XOR -> "XOR"
-    | _ -> raise Unexpected_BinOp
-  in
-  wrap "BinOpKind" op_s []
-
-let relop_to_json op =
-  let op_s =
-    match op with
-    | Bil.Types.EQ -> "EQ"
-    | Bil.Types.NEQ -> "NEQ"
-    | Bil.Types.LT -> "LT"
-    | Bil.Types.LE -> "LE"
-    | Bil.Types.SLT -> "SLT"
-    | Bil.Types.SLE -> "SLE"
-    | _ -> raise Unexpected_RelOp
-  in
-  wrap "RelOpKind" op_s []
 let json_var var =
   let n =
     match Var.typ var with
@@ -205,29 +172,47 @@ let build_json_cast op =
   in
   wrap "CastFrom" op_s []
 
-let is_binop op =
-  match op with
-  | Bil.Types.PLUS
-  | Bil.Types.MINUS
-  | Bil.Types.TIMES
-  | Bil.Types.DIVIDE
-  | Bil.Types.SDIVIDE
-  | Bil.Types.MOD
-  | Bil.Types.SMOD
-  | Bil.Types.LSHIFT
-  | Bil.Types.RSHIFT
-  | Bil.Types.ARSHIFT
-  | Bil.Types.AND
-  | Bil.Types.OR
-  | Bil.Types.XOR -> true
-  | Bil.Types.EQ
-  | Bil.Types.NEQ
-  | Bil.Types.LT
-  | Bil.Types.LE
-  | Bil.Types.SLT
-  | Bil.Types.SLE -> false
 
-let rec build_json_expr expr =
+(* unary operator *)
+
+let json_unop op =
+  let wrap t = "UnOp", (wrap "UnOpKind" t []) in
+
+  match op with
+    | Bil.Types.NEG -> wrap "NEG"
+    | Bil.Types.NOT -> wrap "NOT"
+
+
+(* binary operator *)
+
+let json_binop op =
+  let wrap_bin t = "BinOp", (wrap "BinOpT" t []) in
+  let wrap_rel t = "RelOp", (wrap "RelOpT" t []) in
+
+  match op with
+    (* binary *)
+    | Bil.Types.PLUS -> wrap_bin "ADD"
+    | Bil.Types.MINUS -> wrap_bin "SUB"
+    | Bil.Types.TIMES -> wrap_bin "MUL"
+    | Bil.Types.DIVIDE -> wrap_bin "DIV"
+    | Bil.Types.SDIVIDE -> wrap_bin "SDIV"
+    | Bil.Types.MOD -> wrap_bin "MOD"
+    | Bil.Types.SMOD -> wrap_bin "SMOD"
+    | Bil.Types.LSHIFT -> wrap_bin "SHL"
+    | Bil.Types.RSHIFT -> wrap_bin "SHR"
+    | Bil.Types.ARSHIFT -> wrap_bin "SAR"
+    | Bil.Types.AND -> wrap_bin "AND"
+    | Bil.Types.OR -> wrap_bin "OR"
+    | Bil.Types.XOR -> wrap_bin "XOR"
+    (* relational *)
+    | Bil.Types.EQ -> wrap_rel "EQ"
+    | Bil.Types.NEQ -> wrap_rel "NEQ"
+    | Bil.Types.LT -> wrap_rel "LT"
+    | Bil.Types.LE -> wrap_rel "LE"
+    | Bil.Types.SLT -> wrap_rel "SLT"
+    | Bil.Types.SLE -> wrap_rel "SLE"
+    | _ -> raise Unexpected_Op
+
 
 (* expression *)
 
@@ -242,14 +227,12 @@ let rec json_expr expr =
       wrap "Stmt" "Store" [json_expr e1 ; json_endian endian ; json_expr e2]
 
   | Bil.BinOp (op, e1, e2) ->
-      if is_binop op
-      then
-        wrap_expr "BinOp" [binop_to_json op ; build_json_expr e1 ; build_json_expr e2]
-      else
-        wrap_expr "RelOp" [relop_to_json op ; build_json_expr e1 ; build_json_expr e2]
+      let op_s, op_json = json_binop op in
+      wrap_expr op_s [op_json ; json_expr e1 ; json_expr e2]
 
-  | Bil.UnOp (o, e) ->
-      wrap_expr "UnOp" [unop_to_json o ; build_json_expr e]
+  | Bil.UnOp (op, e) ->
+      let op_s, op_json = json_unop op in
+      wrap_expr op_s [op_json ; json_expr e]
 
   | Bil.Var (v) ->
       wrap_expr "Var" [json_var v]
