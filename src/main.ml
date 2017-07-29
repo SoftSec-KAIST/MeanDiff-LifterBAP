@@ -132,10 +132,13 @@ let json_string s = `String s
 let json_size size =
   json_int (Size.in_bits size)
 
-let json_word word =
-  let value = Word.string_of_value ~hex:false word in
-  let size = Word.bitwidth word in
-  wrap "Imm" "Integer" [json_string value ; json_int size]
+let json_reg var =
+  let size =
+    match Var.typ var with
+    | Type.Imm (n) -> n
+    | Type.Mem (n, _) -> Size.in_bits n
+  in
+  [json_string (String.lowercase (Var.name var)) ; json_int size]
 
 let json_endian endian =
   let endian_s =
@@ -144,14 +147,6 @@ let json_endian endian =
     | BigEndian -> "BE"
   in
   wrap "EndianT" endian_s []
-
-let json_var var =
-  let n =
-    match Var.typ var with
-    | Type.Imm (n) -> n
-    | Type.Mem (n, _) -> Size.in_bits n
-  in
-  wrap "Reg" "Variable" [json_string (String.lowercase (Var.name var)) ; json_int n]
 
 let json_cast op =
   let op_s =
@@ -222,10 +217,12 @@ let rec json_expr expr =
       wrap_expr op_s [op_json ; json_expr e]
 
   | Bil.Var (v) ->
-      wrap_expr "Var" [json_var v]
+      wrap "Expr" "Var" (json_reg v)
 
   | Bil.Int (w) ->
-      wrap_expr "Num" [json_word w]
+      let value = Word.string_of_value ~hex:false w in
+      let size = Word.bitwidth w in
+      wrap "Expr" "Num" [json_string value ; json_int size]
 
   | Bil.Cast (c, n, e) ->
       wrap_expr "Cast" [json_cast c ; json_int n ; json_expr e]
@@ -263,7 +260,7 @@ let rec json_stmt (num, idx, res) stmt =
   | Bil.Types.Move (v, e) ->
       let s = match e with
         | Bil.Store (_, _, _, _, _) -> json_expr e
-        | _ -> wrap_stmt "Move" [json_var v ; json_expr e]
+        | _ -> wrap_stmt "Move" ((json_reg v) @ [json_expr e])
       in
       (num, idx, (s :: res))
 
