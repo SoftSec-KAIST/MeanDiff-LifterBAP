@@ -253,7 +253,7 @@ let rec json_expr expr =
 
 (* statement *)
 
-let rec json_stmt (num, idx, res) stmt =
+let rec json_stmt (ends, idx, res) stmt =
   let wrap_stmt st args = wrap "Stmt" st args in
 
   match stmt with
@@ -262,11 +262,11 @@ let rec json_stmt (num, idx, res) stmt =
         | Bil.Store (_, _, _, _, _) -> json_expr e
         | _ -> wrap_stmt "Move" ((json_reg v) @ [json_expr e])
       in
-      (num, idx, (s :: res))
+      (ends, idx, (s :: res))
 
   | Bil.Types.Jmp (e) ->
       let s = wrap_stmt "End" [json_expr e] in
-      (num, idx, (s :: res))
+      (ends, idx, (s :: res))
 
   | Bil.Types.Special (s) -> raise (Unhandled_Special s)
 
@@ -279,16 +279,16 @@ let rec json_stmt (num, idx, res) stmt =
       let s = wrap_stmt "CJump" [e_j ; json_string s1 ; json_string s2] in
 
       let _, new_idx, sl_j =
-        List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl in
+        List.fold_left ~f:json_stmt ~init:(ends, idx + 2, []) sl in
       (* add missing end *)
       let new_sl_j =
         match sl_j with
-        | [] -> [wrap_stmt "End" [num]]
+        | [] -> [ends]
         | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j
-        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j
+        | _ :: _ -> ends :: sl_j
       in
 
-      (num, new_idx, List.concat [(lab2 :: new_sl_j) ; (lab1 :: s :: res)])
+      (ends, new_idx, List.concat [(lab2 :: new_sl_j) ; (lab1 :: s :: res)])
 
   | Bil.Types.If (e, sl1, sl2) ->
       let e_j = json_expr e in
@@ -299,53 +299,57 @@ let rec json_stmt (num, idx, res) stmt =
       let s = wrap_stmt "CJump" [e_j ; json_string s1 ; json_string s2] in
 
       let _, idx1, sl_j1 =
-        List.fold_left ~f:json_stmt ~init:(num, idx + 2, []) sl1 in
+        List.fold_left ~f:json_stmt ~init:(ends, idx + 2, []) sl1 in
       (* add missing end *)
       let new_sl_j1 =
         match sl_j1 with
-        | [] -> [wrap_stmt "End" [num]]
+        | [] -> [ends]
         | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j1
-        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j1
+        | _ :: _ -> ends :: sl_j1
       in
 
       let _, idx2, sl_j2 =
-        List.fold_left ~f:json_stmt ~init:(num, idx1, []) sl2 in
+        List.fold_left ~f:json_stmt ~init:(ends, idx1, []) sl2 in
       (* add missing end *)
       let new_sl_j2 =
         match sl_j2 with
-        | [] -> [wrap_stmt "End" [num]]
+        | [] -> [ends]
         | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> sl_j2
-        | _ :: _ -> (wrap_stmt "End" [num]) :: sl_j2
+        | _ :: _ -> ends :: sl_j2
       in
 
-      (num, idx2, (List.concat [new_sl_j2 ; (lab2 :: new_sl_j1) ; (lab1 :: s :: res)]))
+      (ends, idx2, (List.concat [new_sl_j2 ; (lab2 :: new_sl_j1) ; (lab1 :: s :: res)]))
 
   | Bil.Types.CpuExn (_) -> raise Unhandled_CpuExn
 
 
 (* abstract syntax tree *)
 
-let json_ast len bil =
-  let start_stmt = wrap "Stmt" "Start"
-      [json_int addr ; json_size 32 ; (json_endian Dba.BigEndian)] in
+let json_ast arch len bil =
   (* TODO: pass arch and match instead of argv.(1) *)
-  let imm = if Sys.argv.(1) = "x86"
-            then [json_int (0x8048000 + len) ; json_int 32]
-            else [json_int (0x401000 + len) ; json_int 64] in
-  let num = wrap "Expr" "Num" imm in
+  let addr, size = if Sys.argv.(1) = "x86"
+                   then 0x8048000 + len , 32
+                   else 0x401000 + len , 64 in
+  let start_stmt = wrap "Stmt" "Start"
+      [json_int addr ; json_int size ; (json_endian (Arch.endian arch))] in
+  let end_stmt = wrap "Stmt" "End"
+    [wrap "Expr" "Num" [json_int addr ; json_int size]] in
 
   (* translate *)
-  let _, _, stmts_rev = List.fold_left ~f:json_stmt ~init:(num, 0, []) bil in
+  let _, _, stmts_rev = List.fold_left ~f:json_stmt ~init:(end_stmt, 0, []) bil in
+
   (* add missing end stmt *)
   let stmts_rev' =
     match stmts_rev with
-    | [] -> [wrap "Stmt" "End" [num]]
+    | [] -> [end_stmt]
     | (`Assoc [("Type", `String "Stmt") ; ("SubType", `String "End") ; _]) :: _ -> stmts_rev
-    | _ :: _ -> (wrap "Stmt" "End" [num]) :: stmts_rev
+    | _ :: _ -> end_stmt :: stmts_rev
   in
-  (* reverse order *)
-  let stmts = (List.rev stmts_rev') in
 
+  (* add start stmt *)
+  let stmts = start_stmt :: (List.rev stmts_rev') in
+
+  (* wrap in ast *)
   wrap "AST" "Stmts" stmts
 
 
@@ -418,7 +422,7 @@ let _ =
               | Error e -> [Bil.special @@ sprintf "Lifter: %s" @@ Error.to_string_hum e]
           in
           let bil' = remove_let_bil bil in
-          let json = json_ast (Memory.length mem) bil' in
+          let json = json_ast arch (Memory.length mem) bil' in
 
           (* pretty print *)
           printf "%s\n" (Yojson.Basic.pretty_to_string json);
