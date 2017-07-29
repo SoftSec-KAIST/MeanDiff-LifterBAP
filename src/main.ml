@@ -167,7 +167,7 @@ let json_cast op =
 (* operators *)
 
 let json_unop op =
-  let wrap t = "UnOp", (wrap "UnOpKind" t []) in
+  let wrap t = "UnOp", (wrap "UnOpT" t []) in
 
   match op with
     | Bil.Types.NEG -> wrap "NEG"
@@ -249,7 +249,7 @@ let rec json_expr expr =
 
   | Bil.Concat (e1, e2) ->
       wrap_expr "BinOp" [
-        (wrap "BinOpKind" "CONCAT" []) ;
+        (wrap "BinOpT" "CONCAT" []) ;
         json_expr e1 ;
         json_expr e2]
 
