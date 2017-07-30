@@ -176,22 +176,22 @@ let json_binop op =
     (* binary *)
     | Bil.Types.PLUS -> wrap_bin "ADD"
     | Bil.Types.MINUS -> wrap_bin "SUB"
-    | Bil.Types.TIMES -> wrap_bin "MUL"
-    | Bil.Types.DIVIDE -> wrap_bin "DIV"
+    | Bil.Types.TIMES -> wrap_bin "UMUL"
+    | Bil.Types.DIVIDE -> wrap_bin "UDIV"
     | Bil.Types.SDIVIDE -> wrap_bin "SDIV"
-    | Bil.Types.MOD -> wrap_bin "MOD"
+    | Bil.Types.MOD -> wrap_bin "UMOD"
     | Bil.Types.SMOD -> wrap_bin "SMOD"
     | Bil.Types.LSHIFT -> wrap_bin "SHL"
-    | Bil.Types.RSHIFT -> wrap_bin "SHR"
-    | Bil.Types.ARSHIFT -> wrap_bin "SAR"
+    | Bil.Types.RSHIFT -> wrap_bin "USHR"
+    | Bil.Types.ARSHIFT -> wrap_bin "SSHR"
     | Bil.Types.AND -> wrap_bin "AND"
     | Bil.Types.OR -> wrap_bin "OR"
     | Bil.Types.XOR -> wrap_bin "XOR"
     (* relational *)
     | Bil.Types.EQ -> wrap_rel "EQ"
     | Bil.Types.NEQ -> wrap_rel "NEQ"
-    | Bil.Types.LT -> wrap_rel "LT"
-    | Bil.Types.LE -> wrap_rel "LE"
+    | Bil.Types.LT -> wrap_rel "ULT"
+    | Bil.Types.LE -> wrap_rel "ULE"
     | Bil.Types.SLT -> wrap_rel "SLT"
     | Bil.Types.SLE -> wrap_rel "SLE"
 
@@ -203,10 +203,10 @@ let rec json_expr expr =
 
   match expr with
   | Bil.Load (_, e1, endian, s) ->
-      wrap_expr "Load" [json_expr e1 ; json_endian endian ; json_size s]
+      wrap_expr "Load" [json_expr e1 ; json_size s]
 
   | Bil.Store (_, e1, e2, endian, _) ->
-      wrap "Stmt" "Store" [json_expr e1 ; json_endian endian ; json_expr e2]
+      wrap "Stmt" "Store" [json_expr e1 ; json_expr e2]
 
   | Bil.BinOp (op, e1, e2) ->
       let op_s, op_json = json_binop op in
