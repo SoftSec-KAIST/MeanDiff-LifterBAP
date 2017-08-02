@@ -221,6 +221,7 @@ let rec json_expr expr =
 
   | Bil.Int (w) ->
       let value = Word.string_of_value ~hex:false w in
+      let value = if value = "-1" then "4294967295" else value in
       let size = Word.bitwidth w in
       wrap "Expr" "Num" [json_string value ; json_int size]
 
@@ -407,8 +408,10 @@ let _ =
     let bytes = Dis.run dis mem ~return:ident ~init:0 ~stop_on:[`Valid]
         (* fail *)
         ~invalid:(fun state mem start ->
-          let stop = Addr.(Dis.addr state - addr |> to_int |> ok_exn) in
-          raise (Bad_inst (Dis.memory state, start, stop)))
+          let json = wrap "AST" "Uninterpretable" [] in
+          printf "%s\n" (Yojson.Basic.pretty_to_string json);
+          0
+          )
 
         (* success *)
         ~hit:(fun state mem insn bytes ->
@@ -422,7 +425,13 @@ let _ =
               | Error e -> [Bil.special @@ sprintf "Lifter: %s" @@ Error.to_string_hum e]
           in
           let bil' = remove_let_bil bil in
-          let json = json_ast arch (Memory.length mem) bil' in
+          let json =
+            try
+              json_ast arch (Memory.length mem) bil'
+            with
+            | Unhandled_Special (_) -> wrap "AST" "Uninterpretable" []
+            | Unhandled_CpuExn -> wrap "AST" "Uninterpretable" []
+          in
 
           (* pretty print *)
           printf "%s\n" (Yojson.Basic.pretty_to_string json);
