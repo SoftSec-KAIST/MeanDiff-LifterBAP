@@ -9,12 +9,14 @@ TARGET = BAP
 BUILDDIR = build
 SRCDIR   = src
 
+.PHONY: all copy clean
 
-.PHONY: all build clean
+all: copy
 
-all: build
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
 
-build:
+copy: $(BUILDDIR)
 	$(OCAML) $(OCAMLFLAGS) $(OCAMLLIBS) -I $(SRCDIR) -r -build-dir $(BUILDDIR) main.native
 	cp $(BUILDDIR)/$(SRCDIR)/main.native $(BUILDDIR)/Lifter$(TARGET)
 
